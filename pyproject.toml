@@ -1,0 +1,22 @@
+[project]
+name = "cot-agent-system"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "haesookim", email = "haesookim0106@plateer.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "langchain>=0.3.27",
+    "langchain-community>=0.3.29",
+    "langchain-core>=0.3.75",
+    "pydantic>=2.11.7",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.1.0",
+    "python-dotenv>=1.1.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
