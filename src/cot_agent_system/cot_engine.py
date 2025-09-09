@@ -17,8 +17,7 @@ class CoTEngine:
         self.todo_manager = TodoManager()
         
         self.cot_prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content="""
-You are an AI assistant that uses Chain of Thought reasoning to break down complex problems into manageable todos.
+            ("system", """You are an AI assistant that uses Chain of Thought reasoning to break down complex problems into manageable todos.
 
 Your task is to:
 1. Analyze the user's query carefully
@@ -38,8 +37,18 @@ Return your response in a structured format that includes:
 - The todos you've identified
 - Dependencies between todos
 - Priority levels for each todo
-"""),
-            HumanMessage(content="{query}")
+
+Format your response with clear sections like:
+## Step 1: [Step name]
+[Your reasoning]
+
+## Step 2: [Step name]
+[Your reasoning]
+
+And include actionable todos like:
+Action: [specific actionable task]
+Action: [another specific actionable task]"""),
+            ("human", "Please analyze this query: {query}")
         ])
         
         self.feedback_prompt = ChatPromptTemplate.from_messages([
@@ -78,31 +87,57 @@ Please analyze this feedback and suggest improvements.
         """Analyze a query using Chain of Thought reasoning and generate todos"""
         process = self.create_cot_process(query)
         
-        # Generate initial chain of thought
-        response = await self.llm.ainvoke(self.cot_prompt.format_messages(query=query))
-        
-        # Parse the response and create CoT steps
-        steps = self._parse_cot_response(response.content)
-        process.steps.extend(steps)
-        
-        # Generate todos based on the analysis
-        todos = self._generate_todos_from_steps(steps)
-        process.todos.extend(todos)
-        
-        # Add todos to the manager
-        for todo in todos:
-            self.todo_manager.todos[todo.id] = todo
+        try:
+            # Generate initial chain of thought
+            formatted_prompt = self.cot_prompt.format_messages(query=query)
+            response = await self.llm.ainvoke(formatted_prompt)
+            
+            # Handle response content
+            response_content = response.content if hasattr(response, 'content') else str(response)
+            
+            # Parse the response and create CoT steps
+            steps = self._parse_cot_response(response_content)
+            process.steps.extend(steps)
+            
+            # Generate todos based on the analysis
+            todos = self._generate_todos_from_steps(steps)
+            process.todos.extend(todos)
+            
+            # Add todos to the manager
+            for todo in todos:
+                self.todo_manager.todos[todo.id] = todo
+            
+            print(f"✅ Successfully analyzed query and created {len(todos)} todos")
+            
+        except Exception as e:
+            print(f"⚠️  Error during LLM analysis: {e}")
+            print("Creating fallback todos based on query analysis...")
+            
+            # Create fallback todos when LLM fails
+            fallback_todos = self._create_fallback_todos(query)
+            process.todos.extend(fallback_todos)
+            
+            for todo in fallback_todos:
+                self.todo_manager.todos[todo.id] = todo
         
         process.updated_at = datetime.now()
         return process
     
-    def _parse_cot_response(self, response: str) -> List[CoTStep]:
+    def _parse_cot_response(self, response) -> List[CoTStep]:
         """Parse the LLM response into CoT steps"""
         steps = []
         
+        # Handle different response types safely
+        if hasattr(response, 'content'):
+            response_text = response.content
+        elif isinstance(response, str):
+            response_text = response
+        else:
+            response_text = str(response)
+        
         # This is a simplified parser - in a real implementation,
         # you might want to use more sophisticated NLP or structured output
-        lines = response.split('\n')
+        lines = response_text.split('\n')
         current_step = None
         
         for line in lines:
@@ -150,6 +185,96 @@ Please analyze this feedback and suggest improvements.
             )
             
             todos.append(todo)
+        
+        return todos
+    
+    def _create_fallback_todos(self, query: str) -> List[Todo]:
+        """Create fallback todos when LLM is unavailable"""
+        todos = []
+        
+        # Detect query type and create appropriate todos
+        if any(op in query for op in ['+', '-', '*', '/', '=', 'calculate', 'compute']):
+            # Math problem - create a direct calculation todo
+            # Extract the math expression from the query
+            math_expr = query.strip()
+            if math_expr.endswith('='):
+                math_expr = math_expr[:-1].strip()
+                
+            todos.append(Todo(
+                id=str(uuid.uuid4()),
+                content=f"Calculate {math_expr}",
+                priority=1,
+                reasoning=f"Perform mathematical calculation: {math_expr}"
+            ))
+            
+            # Add verification step if it's a complex expression
+            if len(math_expr.split()) > 3 or any(op in math_expr for op in ['*', '/', '(', ')']):
+                todos.append(Todo(
+                    id=str(uuid.uuid4()),
+                    content=f"Verify calculation result for {math_expr}",
+                    priority=2,
+                    reasoning="Double-check the calculation for accuracy"
+                ))
+        elif any(word in query.lower() for word in ['plan', 'organize', 'schedule', 'prepare']):
+            # Planning task
+            todos.extend([
+                Todo(
+                    id=str(uuid.uuid4()),
+                    content="Research and gather information about the topic",
+                    priority=1,
+                    reasoning="Good planning starts with thorough research"
+                ),
+                Todo(
+                    id=str(uuid.uuid4()),
+                    content="Break down the plan into major components",
+                    priority=2,
+                    reasoning="Decomposing complex plans makes them manageable"
+                ),
+                Todo(
+                    id=str(uuid.uuid4()),
+                    content="Set priorities and establish timeline",
+                    priority=3,
+                    reasoning="Prioritization and timing are key to successful execution"
+                ),
+                Todo(
+                    id=str(uuid.uuid4()),
+                    content="Create detailed action items for each component",
+                    priority=4,
+                    reasoning="Specific actions make plans actionable"
+                )
+            ])
+        else:
+            # Generic analysis task
+            todos.extend([
+                Todo(
+                    id=str(uuid.uuid4()),
+                    content="Analyze and understand the request",
+                    priority=1,
+                    reasoning="Understanding the core request is essential"
+                ),
+                Todo(
+                    id=str(uuid.uuid4()),
+                    content="Research relevant information and context",
+                    priority=2,
+                    reasoning="Background research provides necessary context"
+                ),
+                Todo(
+                    id=str(uuid.uuid4()),
+                    content="Develop a structured approach to address the request",
+                    priority=3,
+                    reasoning="A systematic approach ensures comprehensive coverage"
+                ),
+                Todo(
+                    id=str(uuid.uuid4()),
+                    content="Implement the solution step by step",
+                    priority=4,
+                    reasoning="Step-by-step implementation reduces complexity"
+                )
+            ])
+        
+        # Set up dependencies (each todo depends on the previous one)
+        for i in range(1, len(todos)):
+            todos[i].dependencies = [todos[i-1].id]
         
         return todos
     
@@ -215,10 +340,19 @@ Please analyze this feedback and suggest improvements.
             "analysis": response.content
         }
     
-    def _parse_feedback_suggestions(self, analysis: str) -> List[str]:
+    def _parse_feedback_suggestions(self, analysis) -> List[str]:
         """Parse suggestions from feedback analysis"""
         suggestions = []
-        lines = analysis.split('\n')
+        
+        # Handle different response types safely
+        if hasattr(analysis, 'content'):
+            analysis_text = analysis.content
+        elif isinstance(analysis, str):
+            analysis_text = analysis
+        else:
+            analysis_text = str(analysis)
+        
+        lines = analysis_text.split('\n')
         
         for line in lines:
             line = line.strip()

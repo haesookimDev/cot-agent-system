@@ -15,6 +15,8 @@ Main components:
 from .agent import CoTAgent
 from .todo_manager import TodoManager
 from .cot_engine import CoTEngine
+from .todo_executor import TodoExecutor
+from .interactive_feedback import InteractiveFeedbackManager, FeedbackType
 from .models import (
     Todo,
     TodoStatus,
@@ -29,6 +31,9 @@ __all__ = [
     "CoTAgent",
     "TodoManager", 
     "CoTEngine",
+    "TodoExecutor",
+    "InteractiveFeedbackManager",
+    "FeedbackType",
     "Todo",
     "TodoStatus",
     "CoTStep",

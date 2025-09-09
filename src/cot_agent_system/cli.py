@@ -8,16 +8,14 @@ the Chain of Thought agent system.
 
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import click
-from dotenv import load_dotenv
 
-from .agent import CoTAgent
-from .models import AgentConfig
+from cot_agent_system.agent import CoTAgent
+from cot_agent_system.models import AgentConfig
 
 
 @click.group()
@@ -37,9 +35,10 @@ def cli():
 @click.option('--config-file', '-c', help='Path to configuration file')
 @click.option('--save-result', '-s', help='Save result to JSON file')
 @click.option('--interactive', '-i', is_flag=True, help='Interactive mode')
+@click.option('--interactive-feedback', '-if', is_flag=True, help='Enable interactive feedback during execution')
 def process(query: Optional[str], model: str, temperature: float, max_tokens: int,
            max_iterations: int, thinking_depth: int, config_file: Optional[str],
-           save_result: Optional[str], interactive: bool):
+           save_result: Optional[str], interactive: bool, interactive_feedback: bool):
     """Process a query using Chain of Thought reasoning."""
     
     # Load environment variables (done automatically in AgentConfig.from_env())
@@ -49,9 +48,9 @@ def process(query: Optional[str], model: str, temperature: float, max_tokens: in
                          max_iterations, thinking_depth)
     
     if interactive or not query:
-        asyncio.run(_interactive_mode(config, save_result))
+        asyncio.run(_interactive_mode(config, save_result, interactive_feedback))
     else:
-        asyncio.run(_process_single_query(query, config, save_result))
+        asyncio.run(_process_single_query(query, config, save_result, interactive_feedback))
 
 
 @cli.command()
@@ -99,7 +98,7 @@ def example():
     click.echo("=" * 40)
     
     from .todo_manager import TodoManager
-    from .models import CoTProcess, CoTStep, Todo
+    from .models import CoTProcess, CoTStep, Todo, TodoStatus
     import uuid
     
     # Create a mock process
@@ -172,7 +171,7 @@ def example():
     click.echo(f"\n🔄 Simulating Execution:")
     for todo in todos:
         click.echo(f"  ⏳ Processing: {todo.content}")
-        todo_manager.update_todo_status(todo.id, "completed")
+        todo_manager.update_todo_status(todo.id, TodoStatus.COMPLETED)
         click.echo(f"  ✅ Completed")
     
     stats = todo_manager.get_statistics()
@@ -185,14 +184,16 @@ def example():
     click.echo("💡 To use with actual LLM, set up API keys and use 'cot-agent process' command.")
 
 
-async def _interactive_mode(config: AgentConfig, save_result: Optional[str]):
+async def _interactive_mode(config: AgentConfig, save_result: Optional[str], interactive_feedback: bool = False):
     """Run the agent in interactive mode."""
     
     click.echo("🤖 CoT Agent Interactive Mode")
+    if interactive_feedback:
+        click.echo("✨ Interactive feedback enabled - you'll be asked for input during execution")
     click.echo("Type 'quit' or 'exit' to stop, 'help' for commands.")
     click.echo("-" * 50)
     
-    agent = CoTAgent(config=config)
+    agent = CoTAgent(config=config, interactive=interactive_feedback)
     
     while True:
         try:
@@ -207,6 +208,10 @@ async def _interactive_mode(config: AgentConfig, save_result: Optional[str]):
             
             if query.lower() == 'stats':
                 _show_stats(agent)
+                continue
+            
+            if query.lower() == 'feedback':
+                _show_feedback_stats(agent)
                 continue
             
             click.echo(f"\n🔄 Processing: {query}")
@@ -224,16 +229,21 @@ async def _interactive_mode(config: AgentConfig, save_result: Optional[str]):
             click.echo(f"❌ Error: {e}")
 
 
-async def _process_single_query(query: str, config: AgentConfig, save_result: Optional[str]):
+async def _process_single_query(query: str, config: AgentConfig, save_result: Optional[str], interactive_feedback: bool = False):
     """Process a single query and display results."""
     
     click.echo(f"🔄 Processing query: {query}")
+    if interactive_feedback:
+        click.echo("✨ Interactive feedback enabled - you'll be asked for input during execution")
     
     try:
-        agent = CoTAgent(config=config)
+        agent = CoTAgent(config=config, interactive=interactive_feedback)
         result = await agent.process_query(query)
         
         _display_result(result)
+        
+        if interactive_feedback and result.get("feedback_summary"):
+            _display_feedback_summary(result["feedback_summary"])
         
         if save_result:
             _save_result_to_file(result, save_result)
@@ -321,7 +331,8 @@ def _show_help():
     
     click.echo("\n📚 Interactive Mode Commands:")
     click.echo("- Enter any query to process it")
-    click.echo("- 'stats' - Show current agent statistics")  
+    click.echo("- 'stats' - Show current agent statistics")
+    click.echo("- 'feedback' - Show feedback statistics (if interactive feedback enabled)")
     click.echo("- 'help' - Show this help")
     click.echo("- 'quit' or 'exit' - Exit interactive mode")
 
@@ -335,6 +346,56 @@ def _show_stats(agent: CoTAgent):
     click.echo(f"- Completed: {len(stats.get('completed_todos', []))}")
     click.echo(f"- Failed: {len(stats.get('failed_todos', []))}")
     click.echo(f"- Pending: {len(stats.get('pending_todos', []))}")
+    
+    # Show execution statistics if available
+    exec_stats = stats.get('execution_summary', {})
+    if exec_stats and exec_stats.get('total_executions', 0) > 0:
+        click.echo(f"\n🔧 Execution Statistics:")
+        click.echo(f"- Total Executions: {exec_stats['total_executions']}")
+        click.echo(f"- Success Rate: {exec_stats['success_rate']:.1f}%")
+        click.echo(f"- Avg Execution Time: {exec_stats['average_execution_time']:.2f}s")
+
+
+def _show_feedback_stats(agent: CoTAgent):
+    """Show feedback statistics."""
+    
+    feedback_summary = agent.feedback_manager.get_feedback_summary()
+    
+    if feedback_summary.get('message'):
+        click.echo(f"\n💬 {feedback_summary['message']}")
+        return
+    
+    click.echo(f"\n💬 Feedback Statistics:")
+    click.echo(f"- Total Requests: {feedback_summary['total_requests']}")
+    click.echo(f"- Interactive Mode: {'✅' if feedback_summary['interactive_mode'] else '❌'}")
+    click.echo(f"- Avg Response Time: {feedback_summary['average_response_time']:.2f}s")
+    
+    if feedback_summary.get('by_type'):
+        click.echo(f"\n📋 Feedback by Type:")
+        for feedback_type, count in feedback_summary['by_type'].items():
+            click.echo(f"  - {feedback_type}: {count}")
+    
+    if feedback_summary.get('recent_requests'):
+        click.echo(f"\n🕒 Recent Requests:")
+        for req in feedback_summary['recent_requests']:
+            response_time = req.get('response_time')
+            time_str = f"({response_time:.1f}s)" if response_time else ""
+            click.echo(f"  - {req['type']}: {req['message']} → {req['response']} {time_str}")
+
+
+def _display_feedback_summary(feedback_summary: Dict[str, Any]):
+    """Display feedback summary in results."""
+    
+    if feedback_summary.get('message'):
+        return  # No feedback to display
+    
+    click.echo(f"\n💬 Interactive Feedback Summary:")
+    click.echo(f"- Total Feedback Requests: {feedback_summary['total_requests']}")
+    click.echo(f"- Average Response Time: {feedback_summary['average_response_time']:.2f}s")
+    
+    if feedback_summary.get('by_type'):
+        for feedback_type, count in feedback_summary['by_type'].items():
+            click.echo(f"- {feedback_type.title()} Requests: {count}")
 
 
 if __name__ == '__main__':
