@@ -1,7 +1,7 @@
 [project]
 name = "cot-agent-system"
 version = "0.1.0"
-description = "Add your description here"
+description = "Chain of Thought based agent system for task management and execution"
 readme = "README.md"
 authors = [
     { name = "haesookim", email = "haesookim0106@plateer.com" }
@@ -15,6 +15,19 @@ dependencies = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.1.0",
     "python-dotenv>=1.1.1",
+    "click>=8.1.0",
+]
+
+[project.scripts]
+cot-agent = "cot_agent_system.cli:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.1.0",
+    "black>=24.0.0",
+    "isort>=5.13.0",
+    "mypy>=1.8.0",
 ]
 
 [build-system]

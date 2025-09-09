@@ -24,18 +24,24 @@ async def basic_example():
     print("🚀 CoT Agent System - Basic Usage Example")
     print("=" * 50)
     
-    # Configure the agent
-    config = AgentConfig(
-        model_name="gpt-3.5-turbo",
-        temperature=0.7,
-        max_tokens=1000,
-        max_iterations=5,
-        thinking_depth=3
-    )
+    # Configure the agent from environment variables
+    try:
+        config = AgentConfig.from_env()
+        print("✅ Configuration loaded from environment variables")
+        print(f"   Model: {config.model_name}")
+        print(f"   Temperature: {config.temperature}")
+        print(f"   Max Iterations: {config.max_iterations}")
+        if config.api_key:
+            print("   API Key: ✅ Found")
+        else:
+            print("   API Key: ❌ Not found (required for LLM functionality)")
+    except Exception as e:
+        print(f"⚠️  Error loading from environment: {e}")
+        print("Using default configuration...")
+        config = AgentConfig()
     
     # Initialize the agent
-    # Note: In a real scenario, you'd need to set up your OpenAI API key
-    print("🔧 Initializing CoT Agent...")
+    print("\n🔧 Initializing CoT Agent...")
     agent = CoTAgent(config=config)
     
     # Example query
@@ -100,7 +106,9 @@ async def manual_feedback_example():
     print("\n🔄 Manual Feedback Example")
     print("=" * 30)
     
-    config = AgentConfig(max_iterations=3)
+    # Load config from environment and override max_iterations
+    config = AgentConfig.from_env()
+    config.max_iterations = 3
     agent = CoTAgent(config=config)
     
     # Create a simple process

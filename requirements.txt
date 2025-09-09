@@ -1,0 +1,14 @@
+# Core dependencies
+langchain>=0.3.27
+langchain-community>=0.3.29
+langchain-core>=0.3.75
+pydantic>=2.11.7
+python-dotenv>=1.1.1
+click>=8.1.0
+
+# Development dependencies (optional)
+pytest>=8.4.2
+pytest-asyncio>=1.1.0
+black>=24.0.0
+isort>=5.13.0
+mypy>=1.8.0
